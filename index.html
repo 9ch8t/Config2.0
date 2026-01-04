@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Конфы</title>
+<style>
+body { margin:0; background:#111; color:#fff; font-family:Arial }
+#app { max-width:500px; margin:auto; padding:10px }
+button,input { padding:8px; border-radius:6px; border:none }
+button { background:#4caf50; color:white }
+.msg { background:#222; margin:4px 0; padding:6px; border-radius:6px }
+.hidden { display:none }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="top"></div>
+
+  <div id="confSelect" class="hidden">
+    <input id="confName" placeholder="Название конфы">
+    <label><input type="checkbox" id="isPublic" checked> публичная</label>
+    <button onclick="createConf()">Создать</button>
+    <hr>
+    <div id="confs"></div>
+  </div>
+
+  <div id="chat" class="hidden">
+    <div id="messages"></div>
+    <input id="text" placeholder="Сообщение">
+    <button id="sendBtn" onclick="send()">Отправить</button>
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+import { getDatabase, ref, push, set, onChildAdded, get, remove } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDwZNhLW89Iw_vPpTovJLphGlJ112prEZk",
+  authDomain: "chatik-598fd.firebaseapp.com",
+  databaseURL: "https://chatik-598fd-default-rtdb.firebaseio.com",
+  projectId: "chatik-598fd",
+  appId: "1:933841656994:web:d2cbeaf26714ff25e44bfb"
+};
+
+const ADMIN_EMAIL = "davidmalakhevich@gmail.com";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth();
+const db = getDatabase();
+
+let user, currentConf, mutedUntil = 0, banned = false;
+let cooldown = false;
+
+const top = document.getElementById("top");
+const confsDiv = document.getElementById("confs");
+const messagesDiv = document.getElementById("messages");
+const chat = document.getElementById("chat");
+const confSelect = document.getElementById("confSelect");
+const sendBtn = document.getElementById("sendBtn");
+
+window.login = async () => {
+  await signInWithPopup(auth, new GoogleAuthProvider());
+};
+
+onAuthStateChanged(auth, async u => {
+  if (!u) {
+    top.innerHTML = `<button onclick="login()">Войти через Google</button>`;
+    return;
+  }
+
+  user = u;
+  top.innerHTML = `<b>${u.displayName}</b> ${u.email === ADMIN_EMAIL ? "👑" : ""}`;
+
+  const userRef = ref(db, "users/" + u.uid);
+  const snap = await get(userRef);
+
+  if (!snap.exists()) {
+    set(userRef, {
+      name: u.displayName,
+      email: u.email,
+      banned: false,
+      muted_until: 0
+    });
+  } else {
+    banned = snap.val().banned;
+    mutedUntil = snap.val().muted_until || 0;
+  }
+
+  if (banned) {
+    alert("Ты забанен");
+    return;
+  }
+
+  confSelect.classList.remove("hidden");
+  loadConfs();
+});
+
+function loadConfs() {
+  confsDiv.innerHTML = "";
+  onChildAdded(ref(db, "confs"), snap => {
+    const c = snap.val();
+    if (!c.public) return;
+    const btn = document.createElement("button");
+    btn.textContent = c.name;
+    btn.onclick = () => enterConf(snap.key);
+    confsDiv.appendChild(btn);
+  });
+}
+
+window.createConf = () => {
+  const name = confName.value.trim();
+  if (!name) return;
+  push(ref(db, "confs"), {
+    name,
+    public: isPublic.checked,
+    owner: user.uid
+  });
+};
+
+function enterConf(id) {
+  currentConf = id;
+  messagesDiv.innerHTML = "";
+  chat.classList.remove("hidden");
+
+  onChildAdded(ref(db, "confs/" + id + "/messages"), snap => {
+    const m = snap.val();
+    const d = document.createElement("div");
+    d.className = "msg";
+    d.textContent = m.name + ": " + m.text;
+    messagesDiv.appendChild(d);
+  });
+}
+
+window.send = () => {
+  if (cooldown) return;
+  if (Date.now() < mutedUntil) {
+    alert("Ты в муте");
+    return;
+  }
+
+  const text = document.getElementById("text").value.trim();
+  if (!text) return;
+
+  cooldown = true;
+  let t = 5;
+  sendBtn.textContent = t;
+
+  const timer = setInterval(() => {
+    t--;
+    sendBtn.textContent = t;
+    if (t === 0) {
+      clearInterval(timer);
+      sendBtn.textContent = "Отправить";
+      cooldown = false;
+
+      push(ref(db, "confs/" + currentConf + "/messages"), {
+        uid: user.uid,
+        name: user.displayName,
+        text,
+        time: Date.now()
+      });
+
+      document.getElementById("text").value = "";
+    }
+  }, 1000);
+};
+</script>
+</body>
+</html>
