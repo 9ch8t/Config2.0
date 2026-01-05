@@ -1,194 +1,90 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Chatik Confs</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<style>
-:root {
-  --bg:#0f1220;
-  --fg:#fff;
-  --card:#1a1f3c;
-  --accent:#6c7cff;
-}
-.light {
-  --bg:#f2f2f7;
-  --fg:#111;
-  --card:#fff;
-  --accent:#4b5cff;
-}
-body {
-  margin:0;
-  font-family:system-ui,sans-serif;
-  background:var(--bg);
-  color:var(--fg);
-}
-header {
-  padding:12px;
-  display:flex;
-  justify-content:space-between;
-  background:var(--card);
-}
-button {
-  background:var(--accent);
-  color:#fff;
-  border:none;
-  border-radius:8px;
-  padding:8px 12px;
-}
-input {
-  padding:8px;
-  border-radius:6px;
-  border:none;
-}
-#app {
-  display:flex;
-  height:calc(100vh - 50px);
-}
-#confs {
-  width:260px;
-  background:var(--card);
-  padding:10px;
-  overflow:auto;
-}
-#chat {
-  flex:1;
-  display:flex;
-  flex-direction:column;
-}
-.msg { margin:6px 0; }
-.admin { background:#c0392b; }
-</style>
+<title>Chatik test</title>
 </head>
-
 <body>
-<header>
-  <b>💬 Chatik</b>
-  <div>
-    <button onclick="toggleTheme()">🌓</button>
-    <button onclick="login()">Войти</button>
-    <button onclick="logout()">Выйти</button>
-  </div>
-</header>
 
-<div id="app">
-  <div id="confs">
-    <h3>Конфы</h3>
-    <div id="confList"></div>
-    <hr>
-    <input id="confName" placeholder="Название"><br><br>
-    <input id="confPass" placeholder="Пароль (если приват)"><br><br>
-    <button onclick="createConf()">Создать</button>
-  </div>
+<button id="login">Войти</button>
+<button id="logout">Выйти</button>
 
-  <div id="chat">
-    <div id="messages" style="flex:1;overflow:auto;padding:10px"></div>
-    <div style="display:flex;gap:6px;padding:10px">
-      <input id="msg" style="flex:1">
-      <button onclick="send()">▶</button>
-    </div>
-  </div>
-</div>
+<h3>Конфы</h3>
+<div id="confs"></div>
+
+<input id="confName" placeholder="название">
+<button id="create">Создать конфу</button>
+
+<hr>
+
+<div id="chat"></div>
+<input id="msg">
+<button id="send">Отправить</button>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
-import { getDatabase, ref, push, set, onValue, remove, get } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-database.js";
+import { getDatabase, ref, push, onValue } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-database.js";
 
-const firebaseConfig = {
+const app = initializeApp({
   apiKey: "AIzaSyDwZNhLW89Iw_vPpTovJLphGlJ112prEZk",
   authDomain: "chatik-598fd.firebaseapp.com",
   databaseURL: "https://chatik-598fd-default-rtdb.firebaseio.com",
-  projectId: "chatik-598fd",
-  storageBucket: "chatik-598fd.firebasestorage.app",
-  messagingSenderId: "933841656994",
-  appId: "1:933841656994:web:d2cbeaf26714ff25e44bfb"
-};
+  projectId: "chatik-598fd"
+});
 
-const app = initializeApp(firebaseConfig);
 const auth = getAuth();
 const db = getDatabase();
 const provider = new GoogleAuthProvider();
 
 let user = null;
 let currentConf = null;
-let adminUid = null;
 
-/* THEME */
-window.toggleTheme = () => {
-  document.body.classList.toggle("light");
-  localStorage.theme = document.body.classList.contains("light");
-};
-if (localStorage.theme === "true") document.body.classList.add("light");
+login.onclick = () => signInWithPopup(auth, provider);
+logout.onclick = () => signOut(auth);
 
-/* AUTH */
-window.login = () => signInWithPopup(auth, provider);
-window.logout = () => signOut(auth);
-
-onAuthStateChanged(auth, async u => {
+onAuthStateChanged(auth, u => {
   user = u;
   if (!u) return;
-  const snap = await get(ref(db,"adminUid"));
-  adminUid = snap.val();
-  await set(ref(db,"users/"+u.uid+"/nick"), u.displayName || "user");
   loadConfs();
 });
 
-/* CONFS */
 function loadConfs() {
   onValue(ref(db,"confs"), s => {
-    confList.innerHTML = "";
+    confs.innerHTML = "";
     s.forEach(c => {
-      const d = c.val();
-      const div = document.createElement("div");
-      div.textContent = d.name + (d.private ? " 🔒" : "");
-      div.onclick = () => enterConf(c.key, d);
-      if (d.owner === user.uid) {
-        const b = document.createElement("button");
-        b.textContent = "✖";
-        b.onclick = e => { e.stopPropagation(); remove(ref(db,"confs/"+c.key)); };
-        div.append(b);
-      }
-      confList.append(div);
+      const d = document.createElement("div");
+      d.textContent = c.val().name;
+      d.onclick = () => openConf(c.key);
+      confs.append(d);
     });
   });
 }
 
-window.createConf = () => {
+create.onclick = () => {
+  if (!user) return alert("не вошёл");
   push(ref(db,"confs"), {
     name: confName.value,
-    owner: user.uid,
-    private: !!confPass.value,
-    password: confPass.value || null
+    owner: user.uid
   });
-  confName.value = confPass.value = "";
 };
 
-/* CHAT */
-function enterConf(id, d) {
-  if (d.private && prompt("Пароль:") !== d.password) return;
+function openConf(id) {
   currentConf = id;
   onValue(ref(db,"confs/"+id+"/messages"), s => {
-    messages.innerHTML = "";
+    chat.innerHTML = "";
     s.forEach(m => {
-      const v = m.val();
-      const div = document.createElement("div");
-      div.className = "msg";
-      div.textContent = v.nick + ": " + v.text;
-      messages.append(div);
+      const d = document.createElement("div");
+      d.textContent = m.val().text;
+      chat.append(d);
     });
   });
 }
 
-window.send = async () => {
+send.onclick = () => {
   if (!currentConf) return;
-  const nick = (await get(ref(db,"users/"+user.uid+"/nick"))).val();
   push(ref(db,"confs/"+currentConf+"/messages"), {
-    uid:user.uid,
-    nick,
-    text:msg.value,
-    time:Date.now()
+    text: msg.value
   });
   msg.value = "";
 };
